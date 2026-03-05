@@ -12,12 +12,7 @@ docbook/*/tmp
 # Local docbook from release tarballs
 doc/en-US
 
-# Untracked plugins
-plugins/*
-!plugins/MantisCoreFormatting
-!plugins/MantisGraph
-!plugins/XmlImportExport
-!plugins/Gravatar
+# All plugins are version controlled
 
 # IDE/Editor temporary files
 *~
