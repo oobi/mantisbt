@@ -62,20 +62,20 @@ class BetterEmailPlugin extends MantisPlugin {
 				$created_str = date( config_get( 'normal_date_format' ), $bug->date_submitted );
 				$updated_str = date( config_get( 'normal_date_format' ), $bug->last_updated );
 
-				// Load attachments: only show files mentioned in THIS update's
-				// "Attached Files:" block; fall back to all if none listed.
+				// Only show files explicitly attached in THIS update.
+				// If the plain text has no "Attached Files:" block, omit the section.
 				require_api( 'file_api.php' );
-				$all_attachments  = file_get_visible_attachments( $bug_id );
-				$noted_filenames  = $this->parse_attached_filenames( $plain_text );
+				$noted_filenames = $this->parse_attached_filenames( $plain_text );
 				if ( !empty( $noted_filenames ) ) {
-					$attachments = array_values( array_filter(
+					$all_attachments = file_get_visible_attachments( $bug_id );
+					$attachments     = array_values( array_filter(
 						$all_attachments,
 						function( $a ) use ( $noted_filenames ) {
 							return in_array( $a['display_name'], $noted_filenames, true );
 						}
 					) );
 				} else {
-					$attachments = $all_attachments;
+					$attachments = [];
 				}
 
 				$bug_html = $this->render_bug_card(
