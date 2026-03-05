@@ -454,11 +454,27 @@ HTML;
 			return null;
 		}
 
-		// --- Disk cache ---
-		// Attachments in MantisBT are immutable once uploaded, so file_id + size
-		// is a permanent cache key – no invalidation needed.
+		// --- Disk cache (lives only for the duration of this PHP process) ---
+		// The cache avoids re-loading + re-resampling the same image for each
+		// recipient in the same send batch (cron run or inline send).
+		// A shutdown function registered once per process wipes all generated
+		// files so nothing accumulates between runs.
 		$cache_dir  = __DIR__ . DIRECTORY_SEPARATOR . 'cache';
 		$cache_file = $cache_dir . DIRECTORY_SEPARATOR . "thumb_{$file_id}_{$size}.jpg";
+
+		// Register the cleanup shutdown function exactly once per process.
+		static $shutdown_registered = false;
+		if ( !$shutdown_registered ) {
+			$shutdown_registered = true;
+			register_shutdown_function( function() use ( $cache_dir ) {
+				if ( !is_dir( $cache_dir ) ) {
+					return;
+				}
+				foreach ( glob( $cache_dir . DIRECTORY_SEPARATOR . 'thumb_*.jpg' ) ?: [] as $f ) {
+					@unlink( $f );
+				}
+			} );
+		}
 
 		if ( is_readable( $cache_file ) ) {
 			$jpeg = file_get_contents( $cache_file );
@@ -510,7 +526,7 @@ HTML;
 			return null;
 		}
 
-		// --- Persist to disk cache ---
+		// --- Persist to disk cache for the rest of this batch ---
 		if ( !is_dir( $cache_dir ) ) {
 			@mkdir( $cache_dir, 0700, true );
 		}
