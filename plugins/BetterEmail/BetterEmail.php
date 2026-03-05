@@ -7,7 +7,7 @@ class BetterEmailPlugin extends MantisPlugin {
 		$this->description = 'Clean HTML notification emails';
 		$this->version     = '1.4';
 		$this->requires    = [ 'MantisCore' => '2.0.0' ];
-		$this->author      = 'Internal';
+		$this->author      = 'Chris Carey';
 	}
 
 	function hooks() {
@@ -117,7 +117,7 @@ class BetterEmailPlugin extends MantisPlugin {
   .attach-list a { color:#0052CC; text-decoration:none; font-weight:500; }
   .attach-list a:hover { text-decoration:underline; }
   .attach-list .size { color:#97A0AF; font-size:11px; margin-left:4px; }
-  .attach-img { max-width:100%; height:auto; border-radius:4px; margin-top:10px; border:1px solid #EBECF0; display:block; }
+  .attach-thumb { display:block; width:160px; height:160px; object-fit:cover; border-radius:4px; border:1px solid #EBECF0; }
   .note-block { background:#F4F5F7; border-radius:4px; padding:14px 16px; margin-bottom:10px; }
   .note-meta { font-size:12px; color:#6B778C; margin-bottom:6px; }
   .note-body { font-size:14px; color:#172B4D; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
@@ -352,18 +352,40 @@ HTML;
 			return '';
 		}
 
-		$base       = rtrim( config_get( 'path' ), '/' ) . '/';
-		$items_html = '';
-		$images_html = '';
+		$base        = rtrim( config_get( 'path' ), '/' ) . '/';
+		$items_html  = '';
+		$image_cells = [];
+		$file_count  = 0;
 
 		foreach ( $attachments as $a ) {
-			$name    = htmlspecialchars( $a['display_name'] );
-			$size    = $this->format_filesize( $a['size'] );
-			$icon    = $this->file_icon( $a['file_type'] ?? '', $a['display_name'] );
-			$dl_url  = isset( $a['download_url'] )
-			           ? htmlspecialchars( $base . $a['download_url'] )
-			           : htmlspecialchars( $bug_url );
+			$name   = htmlspecialchars( $a['display_name'] );
+			$size   = $this->format_filesize( $a['size'] );
+			$icon   = $this->file_icon( $a['file_type'] ?? '', $a['display_name'] );
+			$dl_url = isset( $a['download_url'] )
+			          ? htmlspecialchars( $base . $a['download_url'] )
+			          : htmlspecialchars( $bug_url );
 
+			// Images → thumbnail grid
+			if ( ( $a['type'] ?? '' ) === 'image' && isset( $a['download_url'] ) ) {
+				$data_uri = $this->make_thumbnail_data_uri( $a['id'], 160 );
+				if ( $data_uri ) {
+					$image_cells[] = <<<HTML
+<td width="160" style="padding:4px;vertical-align:top">
+  <a href="{$dl_url}" style="display:block">
+    <img src="{$data_uri}" alt="{$name}" width="160" height="160"
+         style="display:block;width:160px;height:160px;object-fit:cover;
+                border-radius:4px;border:1px solid #EBECF0">
+  </a>
+  <div style="font-size:11px;color:#6B778C;margin-top:4px;overflow:hidden;
+              text-overflow:ellipsis;white-space:nowrap;max-width:160px">{$name}</div>
+</td>
+HTML;
+					continue; // don't add to file list
+				}
+			}
+
+			// Everything else (or images that failed to thumbnail) → file list
+			$file_count++;
 			$items_html .= <<<HTML
 <li>
   <span style="font-size:16px;line-height:1">{$icon}</span>
@@ -371,24 +393,101 @@ HTML;
   <span class="size">{$size}</span>
 </li>
 HTML;
-
-			// Inline image preview
-			if ( ( $a['type'] ?? '' ) === 'image' && isset( $a['download_url'] ) ) {
-				$img_url      = htmlspecialchars( $base . $a['download_url'] );
-				$images_html .= "<a href=\"{$img_url}\"><img src=\"{$img_url}\" alt=\"{$name}\" class=\"attach-img\"></a>\n";
-			}
 		}
 
-		$count = count( $attachments );
-		$label = $count === 1 ? '1 Attachment' : "{$count} Attachments";
+		$total = count( $attachments );
+		$label = $total === 1 ? '1 Attachment' : "{$total} Attachments";
+
+		// Build 3-column table grid for images (table layout = Outlook safe)
+		$grid_html = '';
+		if ( !empty( $image_cells ) ) {
+			$rows  = '';
+			$chunk = array_chunk( $image_cells, 3 );
+			foreach ( $chunk as $row_cells ) {
+				// Pad to 3 so borders stay consistent
+				while ( count( $row_cells ) < 3 ) {
+					$row_cells[] = '<td width="160" style="padding:4px"></td>';
+				}
+				$rows .= '<tr>' . implode( '', $row_cells ) . '</tr>';
+			}
+			$grid_html = <<<HTML
+<table cellpadding="0" cellspacing="0" style="margin-top:12px">
+  {$rows}
+</table>
+HTML;
+		}
+
+		$list_html = $items_html ? "<ul class=\"attach-list\" style=\"margin-top:10px\">{$items_html}</ul>" : '';
 
 		return <<<HTML
 <div class="section">
   <p class="section-label">{$label}</p>
-  <ul class="attach-list">{$items_html}</ul>
-  {$images_html}
+  {$grid_html}
+  {$list_html}
 </div>
 HTML;
+	}
+
+	/**
+	 * Load an image attachment via MantisBT's file API, resize to at most
+	 * $max_px pixels on the longest side using GD, and return a JPEG data URI
+	 * suitable for embedding directly in an <img src="..."> tag.
+	 *
+	 * Embedding as a data URI means:
+	 *  - Works in all clients without authentication
+	 *  - Outlook renders it at exactly the pixel dimensions we specify
+	 *  - No massive full-resolution bitmap in the email
+	 *
+	 * Returns null on any failure (GD missing, unsupported format, etc.).
+	 */
+	private function make_thumbnail_data_uri( int $file_id, int $size = 160 ) : ?string {
+		if ( !function_exists( 'imagecreatefromstring' ) ) {
+			return null;
+		}
+
+		try {
+			$result = file_get_content( $file_id, 'bug' );
+		} catch ( Exception $e ) {
+			return null;
+		}
+
+		if ( !$result || empty( $result['content'] ) ) {
+			return null;
+		}
+
+		$src = @imagecreatefromstring( $result['content'] );
+		if ( $src === false ) {
+			return null;
+		}
+
+		$orig_w = imagesx( $src );
+		$orig_h = imagesy( $src );
+
+		// Center square crop: take the largest square from the middle
+		$crop   = min( $orig_w, $orig_h );
+		$src_x  = (int) round( ( $orig_w - $crop ) / 2 );
+		$src_y  = (int) round( ( $orig_h - $crop ) / 2 );
+
+		$thumb = imagecreatetruecolor( $size, $size );
+
+		// White background (JPEG doesn't support transparency)
+		$white = imagecolorallocate( $thumb, 255, 255, 255 );
+		imagefilledrectangle( $thumb, 0, 0, $size, $size, $white );
+
+		// Resample: map the center square crop → $size × $size
+		imagecopyresampled( $thumb, $src, 0, 0, $src_x, $src_y, $size, $size, $crop, $crop );
+		imagedestroy( $src );
+
+		ob_start();
+		imagejpeg( $thumb, null, 82 );
+		$jpeg = ob_get_clean();
+		imagedestroy( $thumb );
+
+		if ( empty( $jpeg ) ) {
+			return null;
+		}
+
+		return 'data:image/jpeg;base64,' . base64_encode( $jpeg );
 	}
 
 	private function format_filesize( int $bytes ) : string {
