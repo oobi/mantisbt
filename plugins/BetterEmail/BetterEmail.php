@@ -454,6 +454,20 @@ HTML;
 			return null;
 		}
 
+		// --- Disk cache ---
+		// Attachments in MantisBT are immutable once uploaded, so file_id + size
+		// is a permanent cache key – no invalidation needed.
+		$cache_dir  = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mantisbt_email_thumbs';
+		$cache_file = $cache_dir . DIRECTORY_SEPARATOR . "thumb_{$file_id}_{$size}.jpg";
+
+		if ( is_readable( $cache_file ) ) {
+			$jpeg = file_get_contents( $cache_file );
+			if ( !empty( $jpeg ) ) {
+				return 'data:image/jpeg;base64,' . base64_encode( $jpeg );
+			}
+		}
+
+		// --- Generate ---
 		try {
 			$result = file_get_content( $file_id, 'bug' );
 		} catch ( Exception $e ) {
@@ -473,9 +487,9 @@ HTML;
 		$orig_h = imagesy( $src );
 
 		// Center square crop: take the largest square from the middle
-		$crop   = min( $orig_w, $orig_h );
-		$src_x  = (int) round( ( $orig_w - $crop ) / 2 );
-		$src_y  = (int) round( ( $orig_h - $crop ) / 2 );
+		$crop  = min( $orig_w, $orig_h );
+		$src_x = (int) round( ( $orig_w - $crop ) / 2 );
+		$src_y = (int) round( ( $orig_h - $crop ) / 2 );
 
 		$thumb = imagecreatetruecolor( $size, $size );
 
@@ -494,6 +508,14 @@ HTML;
 
 		if ( empty( $jpeg ) ) {
 			return null;
+		}
+
+		// --- Persist to disk cache ---
+		if ( !is_dir( $cache_dir ) ) {
+			@mkdir( $cache_dir, 0700, true );
+		}
+		if ( is_dir( $cache_dir ) ) {
+			@file_put_contents( $cache_file, $jpeg, LOCK_EX );
 		}
 
 		return 'data:image/jpeg;base64,' . base64_encode( $jpeg );
