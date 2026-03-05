@@ -254,9 +254,9 @@ HTML;
 			$notes_html .= '</div>';
 		}
 
-		// ---- Description ----
+		// ---- Description (new issues only) ----
 		$desc_html = '';
-		if ( !empty( $description ) ) {
+		if ( $is_new_issue && !empty( $description ) ) {
 			$desc_html = <<<HTML
 <div class="section">
   <p class="section-label">Description</p>
