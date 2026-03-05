@@ -457,7 +457,7 @@ HTML;
 		// --- Disk cache ---
 		// Attachments in MantisBT are immutable once uploaded, so file_id + size
 		// is a permanent cache key – no invalidation needed.
-		$cache_dir  = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mantisbt_email_thumbs';
+		$cache_dir  = __DIR__ . DIRECTORY_SEPARATOR . 'cache';
 		$cache_file = $cache_dir . DIRECTORY_SEPARATOR . "thumb_{$file_id}_{$size}.jpg";
 
 		if ( is_readable( $cache_file ) ) {
