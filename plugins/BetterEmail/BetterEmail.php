@@ -470,8 +470,12 @@ HTML;
 				if ( !is_dir( $cache_dir ) ) {
 					return;
 				}
-				foreach ( glob( $cache_dir . DIRECTORY_SEPARATOR . 'thumb_*.jpg' ) ?: [] as $f ) {
+				$files = glob( $cache_dir . DIRECTORY_SEPARATOR . 'thumb_*.jpg' ) ?: [];
+				foreach ( $files as $f ) {
 					@unlink( $f );
+				}
+				if ( !empty( $files ) ) {
+					log_event( LOG_EMAIL_VERBOSE, 'BetterEmail: thumbnail cache cleared (' . count( $files ) . ' file(s))' );
 				}
 			} );
 		}
@@ -479,6 +483,7 @@ HTML;
 		if ( is_readable( $cache_file ) ) {
 			$jpeg = file_get_contents( $cache_file );
 			if ( !empty( $jpeg ) ) {
+				log_event( LOG_EMAIL_VERBOSE, "BetterEmail: thumbnail cache hit for file_id={$file_id} size={$size}" );
 				return 'data:image/jpeg;base64,' . base64_encode( $jpeg );
 			}
 		}
@@ -531,7 +536,9 @@ HTML;
 			@mkdir( $cache_dir, 0700, true );
 		}
 		if ( is_dir( $cache_dir ) ) {
-			@file_put_contents( $cache_file, $jpeg, LOCK_EX );
+			if ( @file_put_contents( $cache_file, $jpeg, LOCK_EX ) !== false ) {
+				log_event( LOG_EMAIL_VERBOSE, "BetterEmail: thumbnail cached for file_id={$file_id} size={$size} (" . strlen( $jpeg ) . " bytes)" );
+			}
 		}
 
 		return 'data:image/jpeg;base64,' . base64_encode( $jpeg );
