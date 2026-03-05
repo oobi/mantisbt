@@ -62,9 +62,21 @@ class BetterEmailPlugin extends MantisPlugin {
 				$created_str = date( config_get( 'normal_date_format' ), $bug->date_submitted );
 				$updated_str = date( config_get( 'normal_date_format' ), $bug->last_updated );
 
-				// Load attachments (respects access control for the queuing user)
+				// Load attachments: only show files mentioned in THIS update's
+				// "Attached Files:" block; fall back to all if none listed.
 				require_api( 'file_api.php' );
-				$attachments = file_get_visible_attachments( $bug_id );
+				$all_attachments  = file_get_visible_attachments( $bug_id );
+				$noted_filenames  = $this->parse_attached_filenames( $plain_text );
+				if ( !empty( $noted_filenames ) ) {
+					$attachments = array_values( array_filter(
+						$all_attachments,
+						function( $a ) use ( $noted_filenames ) {
+							return in_array( $a['display_name'], $noted_filenames, true );
+						}
+					) );
+				} else {
+					$attachments = $all_attachments;
+				}
 
 				$bug_html = $this->render_bug_card(
 					$bug_id_padded, $url, $summary, $project,
@@ -523,6 +535,29 @@ HTML;
 			}
 		}
 		return '';
+	}
+
+	/**
+	 * Extract filenames from the "Attached Files:" block in the plain text.
+	 * Returns an array of bare filename strings (empty if no block found).
+	 */
+	public function parse_attached_filenames( string $text ) : array {
+		// Block looks like:
+		// Attached Files:\n
+		// - filename.png (7,360,557 bytes)\n
+		// - another.pdf (12,000 bytes)\n
+		if ( !preg_match( '/Attached Files:\s*\n((?:\s*-\s+.+\n?)+)/i', $text, $m ) ) {
+			return [];
+		}
+		$names = [];
+		foreach ( explode( "\n", trim( $m[1] ) ) as $line ) {
+			// "- filename.ext (N bytes)" — strip leading "- " and trailing " (N bytes)"
+			$line = trim( $line );
+			if ( preg_match( '/^-\s+(.+?)\s*\(\d[\d,]*\s+bytes\)\s*$/i', $line, $fm ) ) {
+				$names[] = trim( $fm[1] );
+			}
+		}
+		return $names;
 	}
 
 	/**
