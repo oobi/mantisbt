@@ -78,6 +78,9 @@ class BetterEmailPlugin extends MantisPlugin {
 					$attachments = [];
 				}
 
+				// Detect new-issue emails so we can show extra fields (steps, additional info)
+				$is_new_issue = (bool) preg_match( '/new.{0,20}issue|issue.{0,20}added|issue.{0,20}submit/i', $action_title );
+
 				$bug_html = $this->render_bug_card(
 					$bug_id_padded, $url, $summary, $project,
 					$status_label, $status_color,
@@ -87,7 +90,7 @@ class BetterEmailPlugin extends MantisPlugin {
 					$created_str, $updated_str,
 					$description, $steps, $additional,
 					$action_title, $notes, $history,
-					$attachments
+					$attachments, $is_new_issue
 				);
 			} catch ( Exception $e ) {
 				// fallback below
@@ -185,7 +188,8 @@ HTML;
 		string $created_str, string $updated_str,
 		string $description, string $steps, string $additional,
 		string $action_title, array $notes, array $history,
-		array $attachments = []
+		array $attachments = [],
+		bool  $is_new_issue = false
 	) : string {
 
 		$status_badge   = $this->status_badge( $status_label, $status_color );
@@ -261,9 +265,9 @@ HTML;
 HTML;
 		}
 
-		// ---- Steps to reproduce ----
+		// ---- Steps to reproduce (new issues only) ----
 		$steps_html = '';
-		if ( !empty( $steps ) ) {
+		if ( $is_new_issue && !empty( $steps ) ) {
 			$steps_html = <<<HTML
 <div class="section">
   <p class="section-label">Steps to Reproduce</p>
@@ -272,9 +276,9 @@ HTML;
 HTML;
 		}
 
-		// ---- Additional info ----
+		// ---- Additional info (new issues only) ----
 		$additional_html = '';
-		if ( !empty( $additional ) ) {
+		if ( $is_new_issue && !empty( $additional ) ) {
 			$additional_html = <<<HTML
 <div class="section">
   <p class="section-label">Additional Information</p>
@@ -347,12 +351,12 @@ HTML;
 
 {$action_html}
 {$meta}
-{$notes_html}
 {$desc_html}
 {$steps_html}
 {$additional_html}
-{$history_html}
+{$notes_html}
 {$attachments_html}
+{$history_html}
 {$cta}
 {$reply_sep}
 HTML;
