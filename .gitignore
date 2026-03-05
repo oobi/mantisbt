@@ -16,6 +16,7 @@ doc/en-US
 
 # IDE/Editor temporary files
 *~
+~*
 *.swp
 *.bak
 .buildpath
