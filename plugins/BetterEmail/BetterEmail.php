@@ -117,7 +117,6 @@ class BetterEmailPlugin extends MantisPlugin {
   .attach-list a { color:#0052CC; text-decoration:none; font-weight:500; }
   .attach-list a:hover { text-decoration:underline; }
   .attach-list .size { color:#97A0AF; font-size:11px; margin-left:4px; }
-  .attach-thumb { display:block; width:160px; height:160px; object-fit:cover; border-radius:4px; border:1px solid #EBECF0; }
   .note-block { background:#F4F5F7; border-radius:4px; padding:14px 16px; margin-bottom:10px; }
   .note-meta { font-size:12px; color:#6B778C; margin-bottom:6px; }
   .note-body { font-size:14px; color:#172B4D; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
@@ -352,10 +351,9 @@ HTML;
 			return '';
 		}
 
-		$base        = rtrim( config_get( 'path' ), '/' ) . '/';
-		$items_html  = '';
-		$image_cells = [];
-		$file_count  = 0;
+		$base       = rtrim( config_get( 'path' ), '/' ) . '/';
+		$items_html = '';
+		$grid_html  = '';
 
 		foreach ( $attachments as $a ) {
 			$name   = htmlspecialchars( $a['display_name'] );
@@ -365,27 +363,36 @@ HTML;
 			          ? htmlspecialchars( $base . $a['download_url'] )
 			          : htmlspecialchars( $bug_url );
 
-			// Images → thumbnail grid
+			// Images → floated thumbnail blocks
+			// Each image lives in its own table with align="left" (Outlook reads this
+			// as a float) plus style="float:left" for everything else.
+			// They naturally wrap onto the next line when there's no more room —
+			// no fixed row structure needed.
 			if ( ( $a['type'] ?? '' ) === 'image' && isset( $a['download_url'] ) ) {
-				$data_uri = $this->make_thumbnail_data_uri( $a['id'], 160 );
+				$data_uri = $this->make_thumbnail_data_uri( $a['id'], 200 );
 				if ( $data_uri ) {
-					$image_cells[] = <<<HTML
-<td width="160" style="padding:4px;vertical-align:top">
-  <a href="{$dl_url}" style="display:block">
-    <img src="{$data_uri}" alt="{$name}" width="160" height="160"
-         style="display:block;width:160px;height:160px;object-fit:cover;
-                border-radius:4px;border:1px solid #EBECF0">
-  </a>
-  <div style="font-size:11px;color:#6B778C;margin-top:4px;overflow:hidden;
-              text-overflow:ellipsis;white-space:nowrap;max-width:160px">{$name}</div>
-</td>
+					$grid_html .= <<<HTML
+<table align="left" cellpadding="0" cellspacing="0"
+       style="float:left;margin:0 8px 8px 0;border-collapse:collapse">
+  <tr>
+    <td style="vertical-align:top">
+      <a href="{$dl_url}" style="display:block;line-height:0">
+        <img src="{$data_uri}" alt="{$name}" width="200" height="200"
+             style="display:block;width:200px;height:200px;
+                    border-radius:4px;border:1px solid #EBECF0">
+      </a>
+      <div style="font-size:11px;color:#6B778C;margin-top:4px;
+                  width:200px;overflow:hidden;text-overflow:ellipsis;
+                  white-space:nowrap">{$name}</div>
+    </td>
+  </tr>
+</table>
 HTML;
-					continue; // don't add to file list
+					continue;
 				}
 			}
 
-			// Everything else (or images that failed to thumbnail) → file list
-			$file_count++;
+			// Non-image files → list
 			$items_html .= <<<HTML
 <li>
   <span style="font-size:16px;line-height:1">{$icon}</span>
@@ -398,23 +405,9 @@ HTML;
 		$total = count( $attachments );
 		$label = $total === 1 ? '1 Attachment' : "{$total} Attachments";
 
-		// Build 3-column table grid for images (table layout = Outlook safe)
-		$grid_html = '';
-		if ( !empty( $image_cells ) ) {
-			$rows  = '';
-			$chunk = array_chunk( $image_cells, 3 );
-			foreach ( $chunk as $row_cells ) {
-				// Pad to 3 so borders stay consistent
-				while ( count( $row_cells ) < 3 ) {
-					$row_cells[] = '<td width="160" style="padding:4px"></td>';
-				}
-				$rows .= '<tr>' . implode( '', $row_cells ) . '</tr>';
-			}
-			$grid_html = <<<HTML
-<table cellpadding="0" cellspacing="0" style="margin-top:12px">
-  {$rows}
-</table>
-HTML;
+		if ( $grid_html ) {
+			// Clearing div ends the float context so the file list below sits correctly
+			$grid_html = "<div style=\"margin-top:12px\">{$grid_html}<div style=\"clear:both;font-size:0;line-height:0\">&nbsp;</div></div>";
 		}
 
 		$list_html = $items_html ? "<ul class=\"attach-list\" style=\"margin-top:10px\">{$items_html}</ul>" : '';
