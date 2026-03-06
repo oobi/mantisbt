@@ -27,6 +27,7 @@ doc/en-US
 .vscode/
 *.kdev4
 nbproject/
+*.log
 
 # Python bytecode
 __pycache__/
